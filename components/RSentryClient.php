@@ -113,6 +113,10 @@ class RSentryClient extends CApplicationComponent {
     public function captureMessage($message, $params=array(), 
                         $level_or_options=array(), $stack=false, $vars = null) {
         // Pass along to the client
+        if(isset($params['extra'])){
+            $this->_client->extra_context($params['extra']);
+        }
+        
         return $this->_client->captureMessage($message, $params, 
                                             $level_or_options, $stack, $vars);
     }

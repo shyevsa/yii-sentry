@@ -103,6 +103,7 @@ class RSentryLogRoute extends CLogRoute {
             $ident = $sentry->captureMessage($title, array(
                 // XX: Not entirely sure how this works, lack of documentation
                 'extra'=>array(
+                    'fullmessage'=> $log[0],
                     'category'=>$log[2],
                 ),
             ), array(
@@ -111,7 +112,7 @@ class RSentryLogRoute extends CLogRoute {
             ));
             
             // Raven client does not support this, yet
-//            $sentry->getIdent($ident);
+            $sentry->getIdent($ident);
         }
     }
 
@@ -187,4 +188,3 @@ class RSentryLogRoute extends CLogRoute {
         return $this->_client;
     }
 }
-?>
