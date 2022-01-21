@@ -231,7 +231,7 @@ class SentryLogRouter extends CLogRoute
             $result[] = "\${$key} = " . \CVarDumper::dumpAsString($value);
         }
 
-        return implode($result);
+        return implode("\n\n", $result);
     }
 
     /**
