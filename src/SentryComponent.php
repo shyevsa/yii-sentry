@@ -9,6 +9,7 @@ use Sentry\Integration\ExceptionListenerIntegration;
 use Sentry\Integration\FatalErrorListenerIntegration;
 use Sentry\Integration\IntegrationInterface;
 use Sentry\SentrySdk;
+use Yiisoft\Arrays\ArrayHelper;
 
 class SentryComponent extends CApplicationComponent
 {
@@ -28,9 +29,13 @@ class SentryComponent extends CApplicationComponent
         $this->initSentry();
     }
 
-    private function initSentry()
+    /**
+     * Init Sentry Listener
+     * @return void
+     */
+    private function initSentry(): void
     {
-        $userOptions = array_merge(['dsn' => $this->dsn], $this->clientOptions);
+        $userOptions = ArrayHelper::merge(['dsn' => $this->dsn], $this->clientOptions);
         $builder = ClientBuilder::create($userOptions);
 
         $options = $builder->getOptions();

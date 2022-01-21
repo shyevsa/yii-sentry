@@ -12,6 +12,7 @@ use Sentry\Severity;
 use Sentry\State\Scope;
 use Throwable;
 use Yii;
+use Yiisoft\Arrays\ArrayHelper;
 use function Sentry\captureEvent;
 use function Sentry\captureException;
 use function Sentry\withScope;
@@ -34,10 +35,54 @@ class SentryLogRouter extends CLogRoute
      */
     public $extraCallback;
 
-    public $maskVars = [
-        'HTTP_AUTHORIZATION',
-        'PHP_AUTH_USER',
-        'PHP_AUTH_PW',
+    /**
+     * @var callable Callback function that modify user's array
+     */
+    public $userCallback;
+
+    /**
+     * @var array list of the PHP predefined variables that should be logged in a message.
+     * Note that a variable must be accessible via `$GLOBALS`. Otherwise it won't be logged.
+     *
+     * Defaults to `['_GET', '_POST', '_FILES', '_COOKIE', '_SESSION', '_SERVER']`.
+     *
+     * Since version 2.0.9 additional syntax can be used:
+     * Each element could be specified as one of the following:
+     *
+     * - `var` - `var` will be logged.
+     * - `var.key` - only `var[key]` key will be logged.
+     * - `!var.key` - `var[key]` key will be excluded.
+     *
+     * Note that if you need $_SESSION to logged regardless if session was used you have to open it right at
+     * the start of your request.
+     *
+     * @see ArrayHelper::filter()
+     */
+    public $log_vars = [
+        '_GET',
+        '_POST',
+        '_FILES',
+        '_COOKIE',
+        '_SESSION',
+        '_SERVER',
+    ];
+
+    /**
+     * @var array list of the PHP predefined variables that should NOT be logged "as is" and should always be replaced
+     * with a mask `***` before logging, when exist.
+     *
+     * Defaults to `[ '_SERVER.HTTP_AUTHORIZATION', '_SERVER.PHP_AUTH_USER', '_SERVER.PHP_AUTH_PW']`
+     *
+     * Each element could be specified as one of the following:
+     *
+     * - `var` - `var` will be logged as `***`
+     * - `var.key` - only `var[key]` will be logged as `***`
+     *
+     */
+    public $mask_vars = [
+        '_SERVER.HTTP_AUTHORIZATION',
+        '_SERVER.PHP_AUTH_USER',
+        '_SERVER.PHP_AUTH_PW',
     ];
 
     /**
@@ -49,13 +94,17 @@ class SentryLogRouter extends CLogRoute
             return;
         }
 
+        if(!$this->getSentry()){
+            return;
+        }
+
         foreach ($logs as $log) {
             [$message, $level, $category, $timestamp] = $log;
 
             $data = [
                 'message' => '',
                 'tags' => ['category' => $category],
-                'extra' => [],
+                'extra' => ['timestamp' => $timestamp],
                 'userData' => []
             ];
 
@@ -70,6 +119,7 @@ class SentryLogRouter extends CLogRoute
                 $user = Yii::app()->hasComponent('user') ? Yii::app()->getUser() : null;
                 if ($user) {
                     $data['userData']['id'] = $user->id;
+                    $data['userData']['name'] = $user->name;
                 }
             } catch (\Throwable $e) {
             }
@@ -98,7 +148,7 @@ class SentryLogRouter extends CLogRoute
 
                     $data['extra'] = $message;
                 } else {
-                    $data['message'] = (string)$message;
+                    $data['message'] = preg_replace('#Stack trace:.+#s', '', (string)$message);
                 }
 
                 if ($this->context) {
@@ -110,6 +160,7 @@ class SentryLogRouter extends CLogRoute
                 }
 
                 $data = $this->runExtraCallback($message, $data);
+                $data = $this->runUserCallback($message, $data);
 
                 $scope->setUser($data['userData']);
 
@@ -141,6 +192,9 @@ class SentryLogRouter extends CLogRoute
 
     protected $_sentry;
 
+    /**
+     * @return false|SentryComponent
+     */
     protected function getSentry()
     {
         if (!isset($this->_sentry)) {
@@ -148,11 +202,10 @@ class SentryLogRouter extends CLogRoute
             if (!Yii::app()->hasComponent($this->sentryComponent)) {
                 Yii::log("'{$this->sentryComponent}' does not exists", CLogger::LEVEL_TRACE, __CLASS__);
             } else {
-                $sentry = Yii::app()->{$this->sentryComponent};
-                if (!$sentry || !$sentry->getIsInitialized()) {
+                /** @var SentryComponent $sentry */
+                $this->_sentry = Yii::app()->{$this->sentryComponent};
+                if (!$this->_sentry || !$this->_sentry->getIsInitialized()) {
                     Yii::log("'{$this->sentryComponent}' not initialized", CLogger::LEVEL_TRACE, __CLASS__);
-                } else {
-                    $sentry->getSentry();
                 }
             }
         }
@@ -160,9 +213,25 @@ class SentryLogRouter extends CLogRoute
         return $this->_sentry;
     }
 
+
+    /**
+     * @return string
+     */
     protected function getContextMessage()
     {
-        return '';
+        $context = ArrayHelper::filter($GLOBALS, $this->log_vars);
+        foreach ($this->mask_vars as $var){
+            if(ArrayHelper::getValue($context, $var) !== null){
+                ArrayHelper::setValue($context, $var, '***');
+            }
+        }
+
+        $result = [];
+        foreach ($context as $key => $value){
+            $result[] = "\${$key} = " . \CVarDumper::dumpAsString($value);
+        }
+
+        return implode($result);
     }
 
     /**
@@ -170,10 +239,24 @@ class SentryLogRouter extends CLogRoute
      * @param array $data
      * @return array
      */
-    public function runExtraCallback($message, array $data): array
+    private function runExtraCallback($message, array $data): array
     {
         if (is_callable($this->extraCallback)) {
             $data['extra'] = call_user_func($this->extraCallback, $message, $data['extra'] ?? []);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param $message
+     * @param array $data
+     * @return array
+     */
+    private function runUserCallback($message, array $data): array
+    {
+        if(is_callable($this->userCallback)){
+            $data['userData'] = call_user_func($this->userCallback, $message, $data['userData'] ?? []);
         }
 
         return $data;
@@ -187,7 +270,7 @@ class SentryLogRouter extends CLogRoute
      */
     public function getLogLevel($level): Severity
     {
-        switch($level){
+        switch ($level) {
             case CLogger::LEVEL_PROFILE:
             case CLogger::LEVEL_TRACE:
                 return Severity::debug();
@@ -200,4 +283,6 @@ class SentryLogRouter extends CLogRoute
                 return Severity::info();
         }
     }
+
+
 }
