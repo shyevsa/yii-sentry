@@ -1,0 +1,24 @@
+{
+    "name": "shyevsa/yii-sentry",
+    "description": "Sentry Log Router for Yii1",
+    "type": "library",
+    "require": {
+        "php": ">=7.4",
+        "sentry/sentry": "^3.3",
+        "yiisoft/yii": "^1.1",
+        "php-http/curl-client": "^2.2"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Shyevsa\\YiiSentry\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Sakurai Evsa",
+            "email": "sakurai.evsa@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable"
+}
