@@ -6,9 +6,15 @@ use CHttpRequest;
 use CLogger;
 use CLogRoute;
 use CWebUser;
+use Sentry\Client;
+use Sentry\ClientInterface;
 use Sentry\Event;
 use Sentry\EventHint;
+use Sentry\Frame;
+use Sentry\FrameBuilder;
+use Sentry\Serializer\RepresentationSerializer;
 use Sentry\Severity;
+use Sentry\Stacktrace;
 use Sentry\State\Scope;
 use Throwable;
 use Yii;
@@ -17,6 +23,9 @@ use function Sentry\captureEvent;
 use function Sentry\captureException;
 use function Sentry\withScope;
 
+/**
+ * @property Client|ClientInterface $sentry
+ */
 class SentryLogRouter extends CLogRoute
 {
 
@@ -40,6 +49,9 @@ class SentryLogRouter extends CLogRoute
      */
     public $userCallback;
 
+    /** @var callable Callback function that modify Tags Array */
+    public $tagsCallback;
+
     /**
      * @var array list of the PHP predefined variables that should be logged in a message.
      * Note that a variable must be accessible via `$GLOBALS`. Otherwise it won't be logged.
@@ -62,7 +74,7 @@ class SentryLogRouter extends CLogRoute
         '_GET',
         '_POST',
         '_FILES',
-        '_COOKIE',
+        //'_COOKIE',
         '_SESSION',
         '_SERVER',
     ];
@@ -83,7 +95,15 @@ class SentryLogRouter extends CLogRoute
         '_SERVER.HTTP_AUTHORIZATION',
         '_SERVER.PHP_AUTH_USER',
         '_SERVER.PHP_AUTH_PW',
+        '_SERVER.HTTP_COOKIE'
     ];
+
+    /**
+     * @see self::getStackTrace().
+     * @var string
+     */
+    public $tracePattern = '/(?J)in (?<file>.*)\:(?<line>\d+)|\((?<file>.*)\:(?<line>\d+)\)|in (?<file>[^(]+)\((?<line>\d+)\)|(?<number>\d+) (?<file>[^(]+)\((?<line>\d+)\): (?<cls>[^-]+)(->|::)(?<func>[^\(]+)/m';
+
 
     /**
      * @inheritdoc
@@ -94,7 +114,7 @@ class SentryLogRouter extends CLogRoute
             return;
         }
 
-        if(!$this->getSentry()){
+        if (!$sentry = $this->getSentry()) {
             return;
         }
 
@@ -119,48 +139,35 @@ class SentryLogRouter extends CLogRoute
                 $user = Yii::app()->hasComponent('user') ? Yii::app()->getUser() : null;
                 if ($user) {
                     $data['userData']['id'] = $user->id;
-                    $data['userData']['name'] = $user->name;
+                    $data['userData']['username'] = $user->name;
                 }
             } catch (\Throwable $e) {
             }
 
-            withScope(function (Scope $scope) use ($message, $level, $data) {
+            withScope(function (Scope $scope) use ($message, $level, $data, $timestamp) {
 
-                if (is_array($message)) {
-                    if (isset($message['msg'])) {
-                        $data['message'] = (string)$message['msg'];
-                        unset($message['msg']);
-                    }
-                    if (isset($message['message'])) {
-                        $data['message'] = (string)$message['message'];
-                        unset($message['message']);
-                    }
-
-                    if (isset($message['tags'])) {
-                        $data['tags'] = array_merge($data['tags'], $message['tags']);
-                        unset($message['tags']);
-                    }
-
-                    if (isset($message['exception']) && $message['exception'] instanceof Throwable) {
-                        $data['exception'] = $message['exception'];
-                        unset($message['exception']);
-                    }
-
-                    $data['extra'] = $message;
-                } else {
-                    $data['message'] = preg_replace('#Stack trace:.+#s', '', (string)$message);
-                }
+                $data['message'] = preg_replace('#(in |\().*?:\d+\)?#', '', explode("\n", ltrim($message), 2)[0]);
+                $data['extra']['full_message'] = $message;
 
                 if ($this->context) {
-                    $data['extra']['context'] = $this->getContextMessage();
-                }
+                    $context = ArrayHelper::filter($GLOBALS, $this->log_vars);
+                    foreach ($this->mask_vars as $var) {
+                        if (ArrayHelper::getValueByPath($context, $var) !== null) {
+                            ArrayHelper::setValueByPath($context, $var, '***');
+                        }
+                    }
 
-                if (isset($_SESSION['FPErrorRef'])) {
-                    $data['extra']['error_ref'] = $_SESSION['FPErrorRef'];
+                    foreach ($context as $key => $value) {
+                        if (empty($value)) {
+                            continue;
+                        }
+                        $scope->setContext($key, $value);
+                    }
                 }
 
                 $data = $this->runExtraCallback($message, $data);
                 $data = $this->runUserCallback($message, $data);
+                $data = $this->runTagsCallback($message, $data);
 
                 $scope->setUser($data['userData']);
 
@@ -180,6 +187,8 @@ class SentryLogRouter extends CLogRoute
                     $event = Event::createEvent();
                     $event->setMessage($data['message']);
                     $event->setLevel($this->getLogLevel($level));
+                    $event->setTimestamp($timestamp);
+                    $event->setStacktrace($this->getStackTrace($message));
 
                     captureEvent($event,
                         EventHint::fromArray(array_filter(['exception' => $data['exception'] ?? null]))
@@ -193,7 +202,7 @@ class SentryLogRouter extends CLogRoute
     protected $_sentry;
 
     /**
-     * @return false|SentryComponent
+     * @return false|Client|ClientInterface
      */
     protected function getSentry()
     {
@@ -203,35 +212,16 @@ class SentryLogRouter extends CLogRoute
                 Yii::log("'{$this->sentryComponent}' does not exists", CLogger::LEVEL_TRACE, __CLASS__);
             } else {
                 /** @var SentryComponent $sentry */
-                $this->_sentry = Yii::app()->{$this->sentryComponent};
-                if (!$this->_sentry || !$this->_sentry->getIsInitialized()) {
+                $sentry = Yii::app()->{$this->sentryComponent};
+                if (!$sentry || !$sentry->getIsInitialized()) {
                     Yii::log("'{$this->sentryComponent}' not initialized", CLogger::LEVEL_TRACE, __CLASS__);
+                } else {
+                    $this->_sentry = $sentry->getClient();
                 }
             }
         }
 
         return $this->_sentry;
-    }
-
-
-    /**
-     * @return string
-     */
-    protected function getContextMessage()
-    {
-        $context = ArrayHelper::filter($GLOBALS, $this->log_vars);
-        foreach ($this->mask_vars as $var){
-            if(ArrayHelper::getValue($context, $var) !== null){
-                ArrayHelper::setValue($context, $var, '***');
-            }
-        }
-
-        $result = [];
-        foreach ($context as $key => $value){
-            $result[] = "\${$key} = " . \CVarDumper::dumpAsString($value);
-        }
-
-        return implode("\n\n", $result);
     }
 
     /**
@@ -255,8 +245,22 @@ class SentryLogRouter extends CLogRoute
      */
     private function runUserCallback($message, array $data): array
     {
-        if(is_callable($this->userCallback)){
+        if (is_callable($this->userCallback)) {
             $data['userData'] = call_user_func($this->userCallback, $message, $data['userData'] ?? []);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param $message
+     * @param array $data
+     * @return array
+     */
+    private function runTagsCallback($message, array $data): array
+    {
+        if (is_callable($this->tagsCallback)) {
+            $data['tags'] = call_user_func($this->tagsCallback, $message, $data['tags'] ?? []);
         }
 
         return $data;
@@ -284,5 +288,52 @@ class SentryLogRouter extends CLogRoute
         }
     }
 
+    /**
+     * Parse yii stack trace for sentry.
+     *
+     * Example log string:
+     * This is Warning in /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CWebApplication.php:286
+     * in /app/org.aevsa.yii1/protected/modules/debug/controllers/DebugController.php (99)
+     * in /app/org.aevsa.yii1/index.php (21)
+     *
+     * #22 /var/www/example.is74.ru/vendor/yiisoft/yii/framework/web/CWebApplication.php(282): CController->run('index')
+     *
+     * (/app/org.aevsa.yii1/protected/modules/debug/controllers/DebugController.php:101)
+     * Stack trace:
+     * #0 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/actions/CInlineAction.php(49): DebugController->actionExp()
+     * #1 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CController.php(308): CInlineAction->runWithParams()
+     * #2 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CController.php(286): DebugController->runAction()
+     * #3 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CController.php(265): DebugController->runActionWithFilters()
+     * #4 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CWebApplication.php(282): DebugController->run()
+     * #5 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/web/CWebApplication.php(141): CWebApplication->runController()
+     * #6 /app/org.aevsa.yii1/protected/vendor/yiisoft/yii/framework/base/CApplication.php(185): CWebApplication->processRequest()
+     * #7 /app/org.aevsa.yii1/index.php(21): CWebApplication->run()
+     * @param string $log
+     * @return Stacktrace|null
+     *
+     */
+    protected function getStackTrace($log)
+    {
+       if (strpos($log, 'Stack trace:') !== false || strpos($log, 'in /') !== false) {
+            if (preg_match_all($this->tracePattern, $log, $m, PREG_SET_ORDER)) {
+                $frames = array();
+                $frameBuilder = new FrameBuilder($this->sentry->getOptions(),
+                    new RepresentationSerializer($this->sentry->getOptions()));
+                foreach ($m as $row) {
+                    $stack = array(
+                        'file' => $row['file'] ?? Frame::INTERNAL_FRAME_FILENAME,
+                        'line' => $row['line'] ?? 0,
+                        'function' => $row['func'] ?? '',
+                        'class' => $row['cls'] ?? '',
+                    );
+                    array_unshift($frames,
+                        $frameBuilder->buildFromBacktraceFrame($stack['file'], $stack['line'], $stack));
+                }
 
+                return new Stacktrace($frames);
+            }
+        }
+
+        return null;
+    }
 }
