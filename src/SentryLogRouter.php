@@ -28,16 +28,20 @@ use function Sentry\withScope;
  */
 class SentryLogRouter extends CLogRoute
 {
-
     /**
      * @var string Sentry Components
      */
-    public $sentryComponent = 'sentry';
+    public string $sentryComponent = 'sentry';
+
+    /**
+     * @var bool
+     */
+    public bool $enable = true;
 
     /**
      * @var bool write the context information
      */
-    public $context = true;
+    public bool $context = true;
 
     /**
      * @var callable Callback function that modify extra's array
@@ -70,7 +74,7 @@ class SentryLogRouter extends CLogRoute
      *
      * @see ArrayHelper::filter()
      */
-    public $log_vars = [
+    public array $log_vars = [
         '_GET',
         '_POST',
         '_FILES',
@@ -91,7 +95,7 @@ class SentryLogRouter extends CLogRoute
      * - `var.key` - only `var[key]` will be logged as `***`
      *
      */
-    public $mask_vars = [
+    public array $mask_vars = [
         '_SERVER.HTTP_AUTHORIZATION',
         '_SERVER.PHP_AUTH_USER',
         '_SERVER.PHP_AUTH_PW',
@@ -102,19 +106,25 @@ class SentryLogRouter extends CLogRoute
      * @see self::getStackTrace().
      * @var string
      */
-    public $tracePattern = '/(?J)in (?<file>.*)\:(?<line>\d+)|\((?<file>.*)\:(?<line>\d+)\)|in (?<file>[^(]+)\((?<line>\d+)\)|(?<number>\d+) (?<file>[^(]+)\((?<line>\d+)\): (?<cls>[^-]+)(->|::)(?<func>[^\(]+)/m';
+    public string $tracePattern = '/(?J)in (?<file>.*)\:(?<line>\d+)|\((?<file>.*)\:(?<line>\d+)\)|in (?<file>[^(]+)\((?<line>\d+)\)|(?<number>\d+) (?<file>[^(]+)\((?<line>\d+)\): (?<cls>[^-]+)(->|::)(?<func>[^\(]+)/m';
 
+    /**
+     * @inheritdoc
+     */
+    public function init()
+    {
+        parent::init();
+        if(!$this->getSentry()){
+            $this->enable = false;
+        }
+    }
 
     /**
      * @inheritdoc
      */
     protected function processLogs($logs)
     {
-        if (count($logs) === 0) {
-            return;
-        }
-
-        if (!$sentry = $this->getSentry()) {
+        if (!$this->enable || count($logs) === 0) {
             return;
         }
 
@@ -210,11 +220,13 @@ class SentryLogRouter extends CLogRoute
             $this->_sentry = false;
             if (!Yii::app()->hasComponent($this->sentryComponent)) {
                 Yii::log("'{$this->sentryComponent}' does not exists", CLogger::LEVEL_TRACE, __CLASS__);
+                $this->enable = false;
             } else {
                 /** @var SentryComponent $sentry */
                 $sentry = Yii::app()->{$this->sentryComponent};
                 if (!$sentry || !$sentry->getIsInitialized()) {
                     Yii::log("'{$this->sentryComponent}' not initialized", CLogger::LEVEL_TRACE, __CLASS__);
+                    $this->enable = false;
                 } else {
                     $this->_sentry = $sentry->getClient();
                 }

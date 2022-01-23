@@ -5,6 +5,7 @@
     "require": {
         "php": ">=7.4",
         "sentry/sdk": "^3.1",
+        "npm-asset/sentry--browser": "^6.0",
         "yiisoft/yii": "^1.1",
         "yiisoft/arrays": "^2.0"
     },
@@ -20,5 +21,11 @@
             "email": "sakurai.evsa@gmail.com"
         }
     ],
-    "minimum-stability": "stable"
+    "minimum-stability": "stable",
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://asset-packagist.org"
+        }
+    ]
 }

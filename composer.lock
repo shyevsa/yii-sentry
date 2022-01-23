@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "47eefb0b7b35ee62a3bf5f5487581667",
+    "content-hash": "72226eab5880e689950c8083f3fd85be",
     "packages": [
         {
             "name": "clue/stream-filter",
@@ -387,6 +387,117 @@
                 "source": "https://github.com/Jean85/pretty-package-versions/tree/2.0.5"
             },
             "time": "2021-10-08T21:21:46+00:00"
+        },
+        {
+            "name": "npm-asset/sentry--browser",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/browser/-/browser-6.13.3.tgz"
+            },
+            "require": {
+                "npm-asset/sentry--core": "6.13.3",
+                "npm-asset/sentry--types": "6.13.3",
+                "npm-asset/sentry--utils": "6.13.3",
+                "npm-asset/tslib": ">=1.9.3,<2.0.0"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/sentry--core",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/core/-/core-6.13.3.tgz"
+            },
+            "require": {
+                "npm-asset/sentry--hub": "6.13.3",
+                "npm-asset/sentry--minimal": "6.13.3",
+                "npm-asset/sentry--types": "6.13.3",
+                "npm-asset/sentry--utils": "6.13.3",
+                "npm-asset/tslib": ">=1.9.3,<2.0.0"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/sentry--hub",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/hub/-/hub-6.13.3.tgz"
+            },
+            "require": {
+                "npm-asset/sentry--types": "6.13.3",
+                "npm-asset/sentry--utils": "6.13.3",
+                "npm-asset/tslib": ">=1.9.3,<2.0.0"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/sentry--minimal",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/minimal/-/minimal-6.13.3.tgz"
+            },
+            "require": {
+                "npm-asset/sentry--hub": "6.13.3",
+                "npm-asset/sentry--types": "6.13.3",
+                "npm-asset/tslib": ">=1.9.3,<2.0.0"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/sentry--types",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/types/-/types-6.13.3.tgz"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/sentry--utils",
+            "version": "6.13.3",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/@sentry/utils/-/utils-6.13.3.tgz"
+            },
+            "require": {
+                "npm-asset/sentry--types": "6.13.3",
+                "npm-asset/tslib": ">=1.9.3,<2.0.0"
+            },
+            "type": "npm-asset",
+            "license": [
+                "BSD-3-Clause"
+            ]
+        },
+        {
+            "name": "npm-asset/tslib",
+            "version": "1.14.1",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/tslib/-/tslib-1.14.1.tgz"
+            },
+            "type": "npm-asset",
+            "license": [
+                "0BSD"
+            ]
         },
         {
             "name": "php-http/client-common",
